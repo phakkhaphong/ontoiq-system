@@ -11,8 +11,10 @@ postgres/data/
 qdrant/storage/
 qdrant/snapshots/
 
-# OpenClaw workspace (separate from vault)
-openclaw-workspace/
+# OpenClaw workspace data (runtime, not source code)
+openclaw-workspace/.openclaw/
+openclaw-workspace/memory/
+# Note: AGENTS.md, SOUL.md, etc. ARE tracked as source code
 
 # Obsidian vault cache (will be synced via Mutagen, not Git)
 ontoiq-vault/.openclaw/
