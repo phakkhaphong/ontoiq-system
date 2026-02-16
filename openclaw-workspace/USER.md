@@ -1,6 +1,7 @@
 # Ontoiq System - User Profile
 
 ## About
+- **Name**: เอก (Ek)
 - **Role**: Content Creator / Course Author
 - **Focus**: Data & AI, Health & Fitness
 
