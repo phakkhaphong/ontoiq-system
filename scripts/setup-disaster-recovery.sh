@@ -68,6 +68,7 @@ mkdir -p postgres/data
 mkdir -p postgres/init
 mkdir -p qdrant/storage
 mkdir -p qdrant/snapshots
+mkdir -p backups
 chown -R 1000:1000 n8n/data/
 
 echo ""
