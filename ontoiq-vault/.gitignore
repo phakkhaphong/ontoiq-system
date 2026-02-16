@@ -1,0 +1,15 @@
+# OpenClaw cache (ไม่ต้อง sync)
+.openclaw/
+
+# Obsidian workspace settings (เปลี่ยนบ่อย)
+.obsidian/workspace.json
+.obsidian/graph.json
+
+# Mutagen sync metadata
+.mutagen*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log

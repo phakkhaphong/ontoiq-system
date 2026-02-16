@@ -1,0 +1,166 @@
+# Ontoiq System - VPS Production Only
+# 
+# Usage:
+#   VPS (Prod):  docker compose --env-file .env up -d
+#
+# Services:
+#   - postgres: Content database
+#   - qdrant: Vector search
+#   - n8n: Automation workflows
+#
+# Note: OpenClaw runs as bare metal service (not in compose)
+# Note: Cloudflare Tunnel runs as systemd service on VPS (not in compose)
+#
+# Key: OpenClaw workspace separated from vault (loop prevention)
+
+networks:
+  ontoiq-net:
+    driver: bridge
+
+services:
+  # ===========================================
+  # PostgreSQL - Content Database
+  # ===========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ontoiq-postgres
+    restart: unless-stopped
+    networks:
+      - ontoiq-net
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ontoiq}
+      POSTGRES_USER: ${POSTGRES_USER:-ontoiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ontoiq} -d ${POSTGRES_DB:-ontoiq}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # Qdrant - Vector Search Engine
+  # ===========================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ontoiq-qdrant
+    restart: unless-stopped
+    networks:
+      - ontoiq-net
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - ./qdrant/storage:/qdrant/storage
+      - ./qdrant/snapshots:/qdrant/snapshots
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # n8n - Workflow Automation
+  # ===========================================
+  # Responsibilities:
+  # - Scheduled content ingestion (6 AM daily)
+  # - Embedding pipeline
+  # - Auto-publishing to social
+  # - Analytics collection
+  # - Notifications to OpenClaw
+  # ===========================================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: ontoiq-n8n
+    restart: unless-stopped
+    user: "1000:1000"  # Run as node user to prevent permission issues
+    networks:
+      - ontoiq-net
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - ./n8n/data:/home/node/.n8n
+      # Vault access for n8n workflows
+      - ./ontoiq-vault/01-Raw-Content:/vault/raw:rw
+      - ./ontoiq-vault/02-Extracts:/vault/extracts:ro
+      - ./ontoiq-vault/06-Analytics:/vault/analytics:rw
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB:-ontoiq}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-ontoiq}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:?N8N_PASSWORD required}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://n8n:5678/}
+      - GENERIC_TIMEZONE=Asia/Bangkok
+      - TZ=Asia/Bangkok
+      - WORKSPACE_RAW=/vault/raw
+      - WORKSPACE_EXTRACTS=/vault/extracts
+      - WORKSPACE_ANALYTICS=/vault/analytics
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - USER_TELEGRAM_ID=${USER_TELEGRAM_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  
+  # ===========================================
+  # Cloudflared - VPS Fallback Tunnel (Optional)
+  # ===========================================
+  # Primary mode on VPS is systemd service (recommended).
+  # This compose service is OFF by default and intended for
+  # fallback/testing only.
+  #
+  # IMPORTANT: Do not run this together with systemd cloudflared
+  # unless you intentionally want multiple connectors.
+  # ===========================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ontoiq-cloudflared
+    restart: unless-stopped
+    profiles:
+      - cloudflare
+    networks:
+      - ontoiq-net
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARED_TUNNEL_TOKEN:-}
+    depends_on:
+      n8n:
+        condition: service_healthy

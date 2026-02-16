@@ -1,0 +1,50 @@
+# Ontoiq System - Git Ignore
+
+# Environment variables (secrets)
+.env
+.env.local
+.env.*.local
+
+# Docker volumes (data directories)
+n8n/data/
+postgres/data/
+qdrant/storage/
+qdrant/snapshots/
+
+# OpenClaw workspace (separate from vault)
+openclaw-workspace/
+
+# Obsidian vault cache (will be synced via Mutagen, not Git)
+ontoiq-vault/.openclaw/
+ontoiq-vault/.obsidian/workspace.json
+ontoiq-vault/.obsidian/graph.json
+ontoiq-vault/.mutagen*
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Node modules (if any)
+node_modules/
+
+# Backup files
+*.bak
+*.backup
+backups/
+
+# Test files
+test.txt
+test-extract.txt
