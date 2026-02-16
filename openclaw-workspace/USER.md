@@ -1,17 +1,65 @@
-# USER.md - About Your Human
+# Ontoiq System - User Profile
 
-_Learn about the person you're helping. Update this as you go._
+## About
+- **Role**: Content Creator / Course Author
+- **Focus**: Data & AI, Health & Fitness
 
-- **Name:**
-- **What to call them:**
-- **Pronouns:** _(optional)_
-- **Timezone:**
-- **Notes:**
+## Expertise
 
-## Context
+### Primary: Data & AI
+- Microsoft Fabric
+- Power BI
+- Agentic AI
+- Data Engineering
+- Machine Learning
+- Cloud Computing (Azure, AWS)
+- DevOps
 
-_(What do they care about? What projects are they working on? What annoys them? What makes them laugh? Build this over time.)_
+### Secondary: Health & Fitness
+- Mediterranean Ketogenic Diet
+- Running
+- General Health & Wellness
+
+## Content Goals
+
+### Weekly
+- 5 social media posts per week
+- Mix of tutorials, tips, trends, and personal insights
+
+### Monthly
+- 2 online courses per month
+- 1 Data/AI course
+- 1 Health/Fitness or advanced topics
+
+## Publishing Schedule
+
+| Day | Content Type |
+|-----|--------------|
+| Monday | Data/AI Tutorial |
+| Tuesday | Agentic AI/ML Trends |
+| Wednesday | Power BI/Fabric Tips |
+| Thursday | Health/Fitness |
+| Friday | Cloud/DevOps |
+
+## Writing Style
+- Professional but approachable
+- Thai language preferred for social posts
+- English acceptable for technical deep-dives
+- Include practical examples
+- Focus on actionable insights
+
+## Target Audience
+- Data professionals
+- AI enthusiasts
+- Health-conscious individuals
+- Thai and international audience
+
+## Preferences
+- Use markdown for all content
+- Include code snippets when relevant
+- Add visual diagrams when helpful
+- Reference sources when applicable
 
 ---
 
-The more you know, the better you can help. But remember — you're learning about a person, not building a dossier. Respect the difference.
+*This file provides context to AI assistants working with Ontoiq system.*

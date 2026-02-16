@@ -1,8 +1,8 @@
-# Ontoiq Master Plan v3: GitOps for AI Personalization
+# Ontoiq Master Plan v4: GitOps for AI Personalization
 
-**Version**: 3.0  
+**Version**: 4.0  
 **Updated**: 2026-02-16  
-**Status**: Production Ready  
+**Status**: Production Ready - Bare Metal OpenClaw  
 **Language**: ภาษาไทย (Technical Professional)
 
 ---
@@ -19,15 +19,14 @@
     
 - **State (ฐานข้อมูล):** เก็บใน **Docker Volume** (Local) และ Backup ขึ้น Cloudflare R2 (Cold Storage)
 
-### สถานะปัจจุบัน
-- ✅ **Mutagen Sync** แทน Syncthing (เร็วจเร็วกกว่า)
+### สถานะปัจจุบัน (v4.0 - Major Update)
+- ✅ **OpenClaw Bare Metal** - ไม่ใช่ Docker (ลดความซับซ้อน Gateway config)
+- ✅ **Loop Prevention Architecture** - OpenClaw workspace แยกจาก vault
+- ✅ **Disaster Recovery Ready** - Git repository พร้อมสำหรับกู้คืน VPS ใหม่
+- ✅ **Mutagen Sync** แทน Syncthing (เร็วกว่า)
 - ✅ **GitOps Architecture** สำหรับ AI brain
-- ✅ **Docker Compose** พร้อม host-mounted volumes
-- ✅ **PowerShell 7 ARM64** สำหรับ Windows development
-- ✅ **Official OpenClaw Image** (ลดความซับซ้อน)
-- ✅ **AI Memory System** (ความจำระยะยาว)
-- ✅ **Clean Documentation** (ทำความสะอาดและปรับปรุง)
-- 🔄 **AI Processing** ทำงานทุกชั่วโมง (cron job)
+- ✅ **Hybrid Architecture** - Docker services (n8n, postgres, qdrant) + Bare Metal OpenClaw
+- ✅ **n8n Vault Integration** - n8n เข้าถึง vault ผ่าน Docker volumes
 
 ---
 
@@ -44,16 +43,25 @@
 │  │  PostgreSQL 3GB    │  Content Database                 │    │
 │  │  Qdrant 3GB        │  Vector Search                    │    │
 │  │  n8n 1.5GB         │  Workflows                       │    │
-│  │  OpenClaw 2GB      │  AI (Kimi) + Telegram            │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                              │
-│  ontoiq-vault/ (OpenClaw workspace = synced vault)          │
-│  ├── 00-System/                        ← Templates & context
-│  ├── 01-Raw-Content/                   ← n8n writes
-│  ├── 02-Extracts/                      ← OpenClaw writes
-│  ├── 03-Drafts/                        ← AI drafts, human reviews on Windows
-│  └── skills/                           ← Per-agent skills
-│  └── processed/      ← Original files after AI processing │
+│  OpenClaw (Bare Metal)                                       │
+│  ├─ Binary: /opt/openclaw/bin/openclaw                      │
+│  ├─ Config: /root/.openclaw/openclaw.json                   │
+│  └─ Workspace: /opt/ontoiq-system/openclaw-workspace/       │
+│     ├─ AGENTS.md, SOUL.md, IDENTITY.md (Git tracked)        │
+│     ├─ memory/ (Git ignored - runtime logs)                  │
+│     ├─ staging/ → symlink to vault/01-Raw-Content/          │
+│     └─ output/ → symlink to vault/02-Extracts/                │
+│                                                              │
+│  ontoiq-vault/ (Mutagen Sync ←→ Windows)                     │
+│  ├── 00-System/                        ← Templates & guides │
+│  ├── 01-Raw-Content/                   ← n8n writes         │
+│  ├── 02-Extracts/                      ← OpenClaw writes     │
+│  ├── 03-Drafts/                        ← Human-AI collab     │
+│  ├── 04-Published/                     ← Final content        │
+│  ├── 05-Templates/                     ← Content templates  │
+│  └── 06-Analytics/                     ← n8n reports         │
 │                                                              │
 │  Total: ~10GB     │     Buffer: ~6GB                        │
 └─────────────────────────────────────────────────────────────┘
@@ -119,14 +127,14 @@
 | **Analytics Collection** | รวบรวม metrics ทุกวัน |
 | **Notification Layer** | ส่ง alerts ผ่าน Telegram |
 
-### OpenClaw - AI Runtime
+### OpenClaw - AI Runtime (Bare Metal)
 
 | งาน | คำอธิบาย |
 |------|-------------|
 | **Real-time Chat** | การสนทนาผ่าน Telegram |
 | **Content Creation** | สร้าง posts, articles, courses |
-| **Content Analysis** | ดึงข้อมูลเชิงลึกจากเนื้อหาดิบ |
-| **Vault Operations** | อ่าน/เขียนไฟล์ใน Obsidian vault |
+| **Content Analysis** | ดึงข้อมูลเชิงลึกจาก `staging/` (Raw-Content) |
+| **Vault Operations** | เขียนผลลัพธ์ลง `output/` (Extracts) |
 | **Query Knowledge** | ค้นหาจาก 4000+ notes พร้อม context |
 
 ### Obsidian - Knowledge Workspace (Windows Only)
@@ -152,59 +160,99 @@
 | postgres | postgres:16-alpine | 3GB | 127.0.0.1:5432 | Content Database |
 | qdrant | qdrant/qdrant:latest | 3GB | 127.0.0.1:6333 | Vector Search |
 | n8n | n8nio/n8n:latest | 1.5GB | 127.0.0.1:5678 | Automation |
-| openclaw | build: ./openclaw | 2GB | 127.0.0.1:18789 | AI + Telegram |
-| mutagen-sync | mutagen/mutagen:latest | 512MB | - | File Sync |
 
-### Key Change: OpenClaw Volume
+**หมายเหตุ:** OpenClaw ไม่ได้อยู่ใน Docker (Bare Metal)
+
+### n8n Volume Mappings (Vault Integration)
 
 ```yaml
-openclaw:
+n8n:
   volumes:
-    # Workspace = synced vault (unified)
-    - ./brain:/home/openclaw/.openclaw
-    - ./ontoiq-vault:/home/openclaw/.openclaw/workspace
+    - ./n8n/data:/home/node/.n8n
+    # Vault access for workflows
+    - ./ontoiq-vault/01-Raw-Content:/vault/raw:rw      # Write access
+    - ./ontoiq-vault/02-Extracts:/vault/extracts:ro    # Read-only
+    - ./ontoiq-vault/06-Analytics:/vault/analytics:rw  # Write access
+  environment:
+    - WORKSPACE_RAW=/vault/raw
+    - WORKSPACE_EXTRACTS=/vault/extracts
+    - WORKSPACE_ANALYTICS=/vault/analytics
 ```
 
 ---
 
 ## 6. โครงสร้าง Directory อย่างละเอียด
 
-### Directory Structure บน Hostinger VPS
+### Directory Structure บน VPS
 
 ```
-/root/ontoiq-system/                      <-- [GIT ROOT] Repository หลัก
-├── .env                                  <-- Secrets (API Keys, Passwords)
-├── .gitignore                            <-- Config ข้าม app-data/ และไฟล์ขยะ
-├── docker-compose.yml                    <-- Orchestration หลัก
-├── init.sql                              <-- Database initialization script
+/opt/ontoiq-system/                      <-- [GIT ROOT] Repository
 │
-├── brain/                                <-- [GIT TRACKED] "สมองของ AI"
-│   ├── AGENTS.md                         <-- AI agent personas
-│   ├── TASKS.md                          <-- Standard Operating Procedures
-│   ├── memory/                           <-- "ความจำระยะยาว" (Long-term Memory)
-│   │   ├── 2026-02-16.md                 <-- AI daily logs
-│   │   └── global_context.md             <-- Global AI context
-│   └── skills/                           <-- Custom Python skills
+├── .env                                  <-- Environment variables (secrets)
+├── .env.example                          <-- Template for .env
+├── .gitignore                            <-- Git ignore rules
+├── docker-compose.yml                    <-- Docker orchestration
+├── README.md                             <-- Repository documentation
 │
-├── ontoiq-vault/                         <-- [MUTAGEN SYNC] "พื้นที่ทำงาน"
-│   ├── .openclaw/                        <-- Agent cache (exclude from Git)
-│   ├── 00-System/                        <-- Templates และ System Context
-│   ├── 01-Raw-Content/                   <-- n8n writes (YouTube/RSS)
-│   ├── 02-Extracts/                      <-- OpenClaw writes (AI insights)
-│   ├── 03-Drafts/                        <-- Human-AI collaboration
-│   │   ├── processed/                      <-- Original files after AI
-│   │   ├── blog-post-2026-02-16-enhanced.md
-│   │   └── blog-post-2026-02-16-summary.md
-│   ├── 04-Courseware/                    <-- Completed courses
-│   ├── 06-Analytics/                     <-- n8n analytics reports
-│   └── skills/                           <-- Per-agent skills
+├── backups/                              <-- [DATA] Backup storage
 │
-└── app-data/                             <-- [DOCKER VOLUMES] ฐานข้อมูล
-    ├── postgres/                         <-- PostgreSQL data
-    ├── qdrant/                           <-- Vector database
-    ├── n8n/                              <-- Workflow configurations
-    └── syncthing/                        <-- Legacy syncthing config
+├── docs/                                 <-- [GIT] Documentation
+│   └── ontoiq-master-plan-v4.md          <-- This file
+│
+├── n8n/                                  <-- [DATA] n8n Docker volume
+│   └── data/                             <-- Workflows & credentials
+│
+├── ontoiq-vault/                         <-- [GIT/MUTAGEN] Obsidian Vault
+│   ├── 00-System/                        ← Templates & system guides
+│   ├── 01-Raw-Content/                   ← n8n writes (YouTube/RSS)
+│   ├── 02-Extracts/                      ← OpenClaw writes (AI insights)
+│   ├── 03-Drafts/                        ← Human-AI collaboration
+│   ├── 04-Published/                       ← Final content
+│   ├── 05-Templates/                       ← Content templates
+│   ├── 06-Analytics/                     ← n8n analytics reports
+│   ├── .gitignore                        ← Vault-specific ignores
+│   └── README.md                         ← Vault documentation
+│
+├── openclaw-workspace/                   <-- [GIT] OpenClaw Config
+│   ├── AGENTS.md                         ← Operating instructions
+│   ├── SOUL.md                           ← Persona & tone
+│   ├── USER.md                           ← User context
+│   ├── IDENTITY.md                       ← Agent identity
+│   ├── TOOLS.md                          ← Local tools
+│   ├── BOOTSTRAP.md                      ← Startup checklist
+│   ├── HEARTBEAT.md                      ← Heartbeat checklist
+│   ├── memory/                           ← Daily logs (gitignored)
+│   ├── skills/                           ← Custom skills
+│   ├── staging → ontoiq-vault/01-Raw-Content/  ← Symlink (read-only)
+│   └── output → ontoiq-vault/02-Extracts/    ← Symlink (write-only)
+│
+├── postgres/                             <-- [DATA] PostgreSQL volume
+│   ├── data/                             ← Database files
+│   └── init/                             ← Init scripts
+│
+├── qdrant/                               <-- [DATA] Qdrant volume
+│   ├── storage/                          ← Vector database
+│   └── snapshots/                        ← Backups
+│
+└── scripts/                              <-- [GIT] Utility scripts
+    └── setup-disaster-recovery.sh        ← VPS recovery script
+
+/opt/openclaw/                            <-- [BARE METAL] OpenClaw installation
+├── bin/openclaw                          ← Binary
+├── config/                               ← Config files
+└── logs/                                 ← Log files
+
+/root/.openclaw/                          <-- [BARE METAL] OpenClaw system
+├── openclaw.json                         ← Main config (ชี้ไป workspace)
+└── agents/                               ← Agent runtime
 ```
+
+**Legend:**
+- **[GIT ROOT]** - Repository root (tracked in Git)
+- **[GIT]** - Source code & configs (tracked)
+- **[DATA]** - Runtime data (gitignored)
+- **[BARE METAL]** - OpenClaw installation (ไม่ใช่ Docker)
+- **[GIT/MUTAGEN]** - Synced content (Git for structure, Mutagen for content)
 
 ---
 
@@ -214,10 +262,10 @@ openclaw:
 
 |**ประเภทข้อมูล**|**เก็บที่ไหน**|**เครื่องมือ**|**Workflow**|
 |---|---|---|---|
-|**1. Agent Persona & Logic**<br>(`AGENTS.md`, `TASKS.md`)|`brain/`|**Git (GitHub)**|1. แก้ใน VS Code<br>2. `git push`<br>3. VPS `git pull`<br>4. AI reloads|
-|**2. AI Memory**<br>(`memory/*.md`)|`brain/memory/`|**Git (GitHub)**|1. AI writes on VPS<br>2. Cron job `git push`<br>3. Review on Windows|
+|**1. OpenClaw Config**<br>(`AGENTS.md`, `SOUL.md`)|`openclaw-workspace/`|**Git (GitHub)**|1. แก้ใน VS Code<br>2. `git push`<br>3. VPS `git pull`|
+|**2. AI Memory**<br>(`memory/*.md`)|`openclaw-workspace/memory/`|**VPS Local**|1. AI writes on VPS<br>2. ไม่ sync (loop prevention)|
 |**3. Content & Drafts**<br>(`ontoiq-vault/`)|`ontoiq-vault/`|**Mutagen**|1. n8n/AI writes on VPS<br>2. Mutagen sync to Windows<br>3. Human edits in Obsidian<br>4. Sync back for publishing|
-|**4. Database**<br>(Postgres/Qdrant)|`app-data/`|**Restic Backup**|1. Data in Docker volumes<br>2. Daily backup to Cloudflare R2|
+|**4. Database**<br>(Postgres/Qdrant)|Service directories|**Restic Backup**|1. Data in Docker volumes<br>2. Daily backup to Cloudflare R2|
 
 ---
 
@@ -229,10 +277,10 @@ openclaw:
 # Create sync session (Windows → VPS)
 mutagen sync create --name=ontoiq-vault \
   ./ontoiq-vault \
-  root@72.61.123.65:/root/ontoiq-system/ontoiq-vault \
+  root@vps:/opt/ontoiq-system/ontoiq-vault \
   --mode=two-way-resolved \
   --ignore-vcs \
-  --ignore=".DS_Store,Thumbs.db,*.tmp,*.log"
+  --ignore=".DS_Store,Thumbs.db,*.tmp,*.log,.openclaw/**"
 ```
 
 ### Monitoring Commands
@@ -320,28 +368,31 @@ done
 - **Zero Trust Architecture**: Cloudflare Access สำหรับ external services
 - **Environment Variables**: Secrets ใน `.env` (gitignored)
 - **Docker Isolation**: Bridge networks พร้อม service isolation
+- **Loop Prevention**: OpenClaw workspace แยกจาก vault (ไม่เกิด infinite loop)
 
 ### Reliability Features
 - **Automatic Backups**: Daily database backups to Cloudflare R2
 - **Health Monitoring**: Comprehensive service health checks
 - **Graceful Degradation**: System continues working with partial failures
 - **Rollback Capability**: Git version control for AI brain
+- **Disaster Recovery**: Git repository + setup script สำหรับ VPS ใหม่
 
 ---
 
 ## 12. Implementation Status
 
-### **✅ Completed**
+### **✅ Completed (v4.0)**
+- [x] OpenClaw Bare Metal migration
+- [x] Loop Prevention Architecture
+- [x] Separated workspace from vault
+- [x] Git repository for disaster recovery
+- [x] Setup script for VPS recovery
+- [x] n8n vault integration via Docker volumes
+- [x] Updated directory structure
+- [x] ACL permissions for n8n container
 - [x] Docker Compose configuration
 - [x] Mutagen sync setup
 - [x] GitOps architecture for AI brain
-- [x] AI processing cron job
-- [x] PowerShell scripts for Windows
-- [x] Service health monitoring
-- [x] Official OpenClaw Image migration
-- [x] AI Memory system implementation
-- [x] Documentation cleanup and consistency
-- [x] File structure optimization
 
 ### **🔄 In Progress**
 - [ ] Performance optimization
@@ -373,6 +424,6 @@ done
 
 ---
 
-*Version: 3.0*  
+*Version: 4.0*  
 *Updated: 2026-02-16*  
-*Status: Implementation in Progress*
+*Status: Production Ready - Bare Metal OpenClaw*
