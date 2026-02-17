@@ -82,6 +82,56 @@ trigger_n8n(workflow: string, data: object) → void
   - `youtube-summary`
   - `publish-scheduled`
 
+## Directory Structure Reference
+
+### Staging (/staging/ → ../ontoiq-vault/01-Raw-Content/)
+**Purpose**: Read-only content from n8n/external sources
+
+| Subdirectory | Content Type | Example |
+|--------------|--------------|---------|
+| `blogs/` | Blog articles | `blogs/techcrunch-ai.md` |
+| `youtube/` | Video transcripts | `youtube/powerbi-tips.md` |
+| `udemy/` | Course materials | `udemy/fabric-course.md` |
+
+**Rule**: READ-ONLY - Do not write to this directory
+
+### Output (/output/ → ../ontoiq-vault/02-Extracts/)
+**Purpose**: AI-generated extracts
+
+| Subdirectory | Output Type | Naming Convention |
+|--------------|-------------|-------------------|
+| `concepts/` | Key concepts | `concept-{name}-{date}.md` |
+| `insights/` | Analysis | `insight-{topic}-{date}.md` |
+| `quotes/` | Notable quotes | `quotes-{source}-{date}.md` |
+| (root) | General | `{topic}-{YYYY-MM-DD}.md` |
+
+**Rule**: WRITE-ONLY - Read own outputs for reference only
+
+### Workflow Pattern
+```
+1. Read: /staging/{source}/content.md
+2. Process with AI
+3. Write: /output/{type}/{name}-{date}.md
+4. Notify via Telegram
+```
+
+### File Operations Examples
+```bash
+# Read from staging
+read_file("/staging/youtube/video-transcript.md")
+
+# Write insights
+write_file("/output/insights/powerbi-insights-2026-02-17.md", content)
+
+# Write concepts
+write_file("/output/concepts/ai-agent-concepts-2026-02-17.md", content)
+
+# Write quotes
+write_file("/output/quotes/expert-opinions-2026-02-17.md", content)
+```
+
+---
+
 ## n8n Integration
 
 ### Webhook Endpoints

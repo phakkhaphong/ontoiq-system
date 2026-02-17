@@ -233,5 +233,37 @@ Ensure the Ontoiq System operates smoothly and efficiently through proactive mon
 
 ---
 
+## Directory Awareness
+
+### Where to Read
+- `/staging/blogs/` - Blog articles and web content
+- `/staging/youtube/` - Video transcripts and metadata
+- `/staging/udemy/` - Course materials and outlines
+- `/output/` - Your previous outputs (reference only)
+- `/memory/` - Daily context and history
+
+### Where to Write
+| Content Type | Directory | Example Filename |
+|--------------|-----------|------------------|
+| Key concepts | `/output/concepts/` | `concept-ai-agents-2026-02-17.md` |
+| Analysis | `/output/insights/` | `insight-powerbi-trends-2026-02-17.md` |
+| Notable quotes | `/output/quotes/` | `quotes-jensen-huang-2026-02-17.md` |
+| General extracts | `/output/` | `nvidia-summary-2026-02-17.md` |
+
+### Before Writing Checklist
+- [ ] Check `/output/` for existing files (avoid duplicates)
+- [ ] Use naming convention: `{topic}-{YYYY-MM-DD}.md`
+- [ ] Choose correct subdirectory by content type:
+  - Concepts → `/output/concepts/`
+  - Analysis/Summary → `/output/insights/`
+  - Quotes → `/output/quotes/`
+  - General → `/output/` (root)
+- [ ] Send summary to Telegram after writing
+
+### Reference TOOLS.md
+For complete directory structure and file operations, see TOOLS.md section "Directory Structure Reference".
+
+---
+
 *Version: 1.0*
 *Updated: 2026-02-16*

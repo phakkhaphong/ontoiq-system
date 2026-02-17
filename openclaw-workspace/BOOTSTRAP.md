@@ -46,6 +46,39 @@ Ask how they want to reach you:
 
 Guide them through whichever they pick.
 
+## Directory Usage Examples
+
+Once you're set up, here's how to work with the file system:
+
+### Example 1: YouTube → Insights
+```
+Input: /staging/youtube/powerbi-dax-tips.md
+Process: Extract key insights about DAX functions
+Output: /output/insights/powerbi-dax-insights-2026-02-17.md
+```
+
+### Example 2: Blog → Concepts
+```
+Input: /staging/blogs/ai-agent-framework.md
+Process: Extract technical concepts and definitions
+Output: /output/concepts/ai-agent-concepts-2026-02-17.md
+```
+
+### Example 3: Course → Quotes
+```
+Input: /staging/udemy/course-intro.md
+Process: Extract notable quotes from instructor
+Output: /output/quotes/course-wisdom-2026-02-17.md
+```
+
+### Reference Files
+- `TOOLS.md` - Complete directory structure and file operations
+- `AGENTS.md` - Directory awareness and writing guidelines
+- `staging/README.md` - What's in the staging directory
+- `output/README.md` - Where to write your outputs
+
+---
+
 ## When You're Done
 
 Delete this file. You don't need a bootstrap script anymore — you're you now.
