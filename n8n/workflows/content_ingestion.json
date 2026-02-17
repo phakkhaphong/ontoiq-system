@@ -1,0 +1,254 @@
+{
+  "name": "Ontoiq: Content Ingestion Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check for new content in staging directories\nconst fs = require('fs');\nconst path = require('path');\n\nconst stagingDir = '/vault/raw';\nconst sourceTypes = ['blogs', 'youtube', 'udemy', 'meeting', 'note'];\n\nconst newContent = [];\n\nfor (const sourceType of sourceTypes) {\n  const dirPath = path.join(stagingDir, sourceType);\n  \n  if (fs.existsSync(dirPath)) {\n    const files = fs.readdirSync(dirPath);\n    \n    for (const file of files) {\n      if (file.endsWith('.md')) {\n        const filePath = path.join(dirPath, file);\n        const stats = fs.statSync(filePath);\n        const content = fs.readFileSync(filePath, 'utf-8');\n        \n        // Extract metadata from frontmatter\n        const frontmatterMatch = content.match(/^---\\n([\\s\\S]*?)\\n---/);\n        const metadata = frontmatterMatch ? parseFrontmatter(frontmatterMatch[1]) : {};\n        \n        newContent.push({\n          json: {\n            source_type: sourceType,\n            title: metadata.title || file.replace('.md', ''),\n            file_path: filePath,\n            raw_content: content.replace(/^---\\n[\\s\\S]*?\\n---\\n/, ''),\n            url: metadata.url || null,\n            author: metadata.author || null,\n            source_published_at: metadata.created || null,\n            domain_slug: metadata.domain || 'daily-journal'\n          }\n        });\n      }\n    }\n  }\n}\n\nfunction parseFrontmatter(fm) {\n  const result = {};\n  const lines = fm.split('\\n');\n  for (const line of lines) {\n    const match = line.match(/^([^:]+):\\s*(.*)$/);\n    if (match) {\n      result[match[1].trim()] = match[2].trim().replace(/^['\"](.*)['\"]$/, '$1');\n    }\n  }\n  return result;\n}\n\nreturn newContent;"
+      },
+      "id": "scan-content",
+      "name": "Scan Staging Directory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM knowledge_domains WHERE slug = $1",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "slug",
+            "value": "={{ $json.domain_slug }}"
+          }
+        ]
+      },
+      "id": "lookup-domain",
+      "name": "Lookup Domain ID",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "content_sources",
+        "columns": {
+          "source_type": "={{ $json.source_type }}",
+          "title": "={{ $json.title }}",
+          "url": "={{ $json.url }}",
+          "author": "={{ $json.author }}",
+          "raw_content": "={{ $json.raw_content }}",
+          "processing_state": "pending",
+          "domain_id": "={{ $('Lookup Domain ID').first().json.id }}"
+        },
+        "options": {
+          "ignoreOnConflict": true
+        }
+      },
+      "id": "insert-source",
+      "name": "Insert Content Source",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chunk content for embedding\nconst content = $json.raw_content;\nconst chunkSize = 500; // tokens (approximate)\nconst overlap = 50;\n\nconst chunks = [];\nconst paragraphs = content.split('\\n\\n');\n\nlet currentChunk = '';\nlet chunkNumber = 1;\n\nfor (const paragraph of paragraphs) {\n  if ((currentChunk + paragraph).length > chunkSize * 4) { // Approximate chars to tokens\n    chunks.push({\n      chunk_number: chunkNumber++,\n      chunk_text: currentChunk.trim(),\n      chunk_type: 'paragraph'\n    });\n    currentChunk = paragraph;\n  } else {\n    currentChunk += '\\n\\n' + paragraph;\n  }\n}\n\nif (currentChunk.trim()) {\n  chunks.push({\n    chunk_number: chunkNumber,\n    chunk_text: currentChunk.trim(),\n    chunk_type: 'paragraph'\n  });\n}\n\nreturn chunks.map(chunk => ({\n  json: {\n    ...chunk,\n    source_id: $json.id\n  }\n}));"
+      },
+      "id": "chunk-content",
+      "name": "Chunk Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "content_chunks",
+        "columns": {
+          "source_id": "={{ $json.source_id }}",
+          "chunk_number": "={{ $json.chunk_number }}",
+          "chunk_text": "={{ $json.chunk_text }}",
+          "chunk_type": "={{ $json.chunk_type }}"
+        }
+      },
+      "id": "insert-chunks",
+      "name": "Insert Chunks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-content",
+      "name": "Has New Content?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Trigger embedding pipeline for each chunk\nreturn $input.all().map(item => ({\n  json: {\n    source_id: item.json.source_id,\n    chunk_id: item.json.id,\n    chunk_text: item.json.chunk_text\n  }\n}));"
+      },
+      "id": "trigger-embedding",
+      "name": "Trigger Embedding Pipeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Scan Staging Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan Staging Directory": {
+      "main": [
+        [
+          {
+            "node": "Has New Content?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Content?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Domain ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Lookup Domain ID": {
+      "main": [
+        [
+          {
+            "node": "Insert Content Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Content Source": {
+      "main": [
+        [
+          {
+            "node": "Chunk Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk Content": {
+      "main": [
+        [
+          {
+            "node": "Insert Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Chunks": {
+      "main": [
+        [
+          {
+            "node": "Trigger Embedding Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ontoiq",
+      "color": "#3b82f6"
+    },
+    {
+      "name": "ingestion",
+      "color": "#10b981"
+    }
+  ]
+}

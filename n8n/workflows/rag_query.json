@@ -1,0 +1,356 @@
+{
+  "name": "Ontoiq: RAG Query Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "trigger-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [50, 300],
+      "webhookId": "rag-query"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and extract query\nconst body = $input.first().json.body;\n\nif (!body || !body.query) {\n  throw new Error('Missing query parameter');\n}\n\nconst query = body.query;\nconst domain_filter = body.domain || null;\nconst top_k = body.top_k || 5;\n\n// Log the query start time\nconst startTime = Date.now();\n\nreturn {\n  json: {\n    query: query,\n    domain_filter: domain_filter,\n    top_k: top_k,\n    start_time: startTime\n  }\n};"
+      },
+      "id": "parse-query",
+      "name": "Parse Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/embeddings",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "model": "text-embedding-3-large",
+          "input": "={{ $json.query }}",
+          "dimensions": 1536
+        },
+        "options": {}
+      },
+      "id": "generate-query-embedding",
+      "name": "Generate Query Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "openai-api",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract embedding vector\nconst embeddingData = $input.first().json.data;\n\nif (!embeddingData || embeddingData.length === 0) {\n  throw new Error('Failed to generate query embedding');\n}\n\nconst queryVector = embeddingData[0].embedding;\n\nreturn {\n  json: {\n    vector: queryVector,\n    query: $input.first().json.query,\n    top_k: $input.first().json.top_k\n  }\n};"
+      },
+      "id": "extract-vector",
+      "name": "Extract Vector",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://qdrant:6333/collections/content_embeddings/points/search",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "vector": "={{ $json.vector }}",
+          "limit": "={{ $json.top_k }}",
+          "with_payload": true,
+          "with_distance": true
+        }
+      },
+      "id": "search-qdrant",
+      "name": "Search Qdrant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Qdrant results\nconst results = $input.first().json.result;\n\nif (!results || results.length === 0) {\n  return {\n    json: {\n      results: [],\n      context: ''\n    }\n  };\n}\n\nconst chunkIds = results.map(r => r.id);\n\nreturn {\n  json: {\n    chunk_ids: chunkIds,\n    results: results,\n    query: $input.first().json.query\n  }\n};"
+      },
+      "id": "process-results",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT cc.id, cc.chunk_text, cc.chunk_number, cs.title as source_title, cs.source_type\nFROM content_chunks cc\nJOIN content_sources cs ON cc.source_id = cs.id\nWHERE cc.id = ANY($1::uuid[]);",
+        "options": {},
+        "parameters": [
+          {
+            "name": "chunk_ids",
+            "value": "={{ $json.chunk_ids }}"
+          }
+        ]
+      },
+      "id": "fetch-chunks",
+      "name": "Fetch Chunk Content",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build context for AI\nconst chunks = $input.all();\nconst originalQuery = $input.first().json.query;\n\nlet context = '## Retrieved Context:\\n\\n';\n\nfor (const chunk of chunks) {\n  context += `Source: ${chunk.json.source_title} (${chunk.json.source_type})\\n`;\n  context += `Chunk ${chunk.json.chunk_number}:\\n`;\n  context += `${chunk.json.chunk_text}\\n\\n`;\n  context += `---\\n\\n`;\n}\n\nconst fullPrompt = `User Query: ${originalQuery}\\n\\n${context}\\n\\nBased on the above context, please provide a comprehensive answer to the user's query. If the context doesn't contain enough information, please say so.`;\n\nreturn {\n  json: {\n    prompt: fullPrompt,\n    original_query: originalQuery,\n    chunk_count: chunks.length\n  }\n};"
+      },
+      "id": "build-context",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://openclaw:18789/tools/invoke",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "tool": "sessions_send",
+          "args": {
+            "sessionKey": "agent:main:main",
+            "message": "={{ $json.prompt }}"
+          }
+        }
+      },
+      "id": "call-openclaw-rag",
+      "name": "Call OpenClaw for Answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log query for analytics\nconst endTime = Date.now();\nconst startTime = $input.first().json.start_time || endTime - 1000;\nconst responseTime = endTime - startTime;\n\nreturn {\n  json: {\n    query_text: $input.first().json.original_query,\n    results_count: $input.first().json.chunk_count,\n    response_time_ms: responseTime,\n    top_result_ids: $input.first().json.chunk_ids || []\n  }\n};"
+      },
+      "id": "prepare-log",
+      "name": "Prepare Query Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 500]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "query_logs",
+        "columns": {
+          "query_text": "={{ $json.query_text }}",
+          "results_count": "={{ $json.results_count }}",
+          "response_time_ms": "={{ $json.response_time_ms }}",
+          "top_result_ids": "={{ $json.top_result_ids }}"
+        }
+      },
+      "id": "log-query",
+      "name": "Log Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1850, 500],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare success response\nconst chunks = $input.all().filter(item => item.json.chunk_text);\n\nreturn {\n  json: {\n    success: true,\n    query: $input.first().json.original_query,\n    results_found: chunks.length,\n    sources: chunks.map(c => ({\n      title: c.json.source_title,\n      type: c.json.source_type,\n      chunk_number: c.json.chunk_number,\n      preview: c.json.chunk_text.substring(0, 200) + '...'\n    }))\n  }\n};"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 100]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Query": {
+      "main": [
+        [
+          {
+            "node": "Generate Query Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Query Embedding": {
+      "main": [
+        [
+          {
+            "node": "Extract Vector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Vector": {
+      "main": [
+        [
+          {
+            "node": "Search Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Qdrant": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Fetch Chunk Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Query Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Chunk Content": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Call OpenClaw for Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Query Log": {
+      "main": [
+        [
+          {
+            "node": "Log Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenClaw for Answer": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ontoiq",
+      "color": "#3b82f6"
+    },
+    {
+      "name": "rag",
+      "color": "#10b981"
+    },
+    {
+      "name": "query",
+      "color": "#f59e0b"
+    }
+  ]
+}

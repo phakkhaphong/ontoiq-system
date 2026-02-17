@@ -1,0 +1,281 @@
+{
+  "name": "Ontoiq: AI Analysis Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [50, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM pending_content LIMIT 5;"
+      },
+      "id": "fetch-pending",
+      "name": "Fetch Pending Content",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-content",
+      "name": "Has Content?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT transition_content_state('content_source', $1, 'processing', 'AI analysis');",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "source_id",
+            "value": "={{ $json.id }}"
+          }
+        ]
+      },
+      "id": "set-processing",
+      "name": "Set State: Processing",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://openclaw:18789/tools/invoke",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "tool": "sessions_send",
+          "args": {
+            "sessionKey": "agent:main:main",
+            "message": "📥 Analyze content: {{ $json.title }}\n\nRead from: /staging/{{ $json.source_type }}/{{ $json.id }}.md\n\nPlease:\n1. Read the content\n2. Extract key concepts, insights, and quotes\n3. Save to appropriate /output/ subdirectories\n4. Use naming convention: {topic}-{YYYY-MM-DD}.md"
+          }
+        }
+      },
+      "id": "call-openclaw",
+      "name": "Call OpenClaw",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT transition_content_state('content_source', $1, 'completed', 'AI analysis completed');",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "source_id",
+            "value": "={{ $json.id }}"
+          }
+        ]
+      },
+      "id": "set-completed",
+      "name": "Set State: Completed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 200],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT transition_content_state('content_source', $1, 'failed', 'AI analysis failed', $2);",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "source_id",
+            "value": "={{ $json.id }}"
+          },
+          {
+            "name": "error",
+            "value": "={{ $json.error }}"
+          }
+        ]
+      },
+      "id": "set-failed",
+      "name": "Set State: Failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 400],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "chat_id": "{{ $env.USER_TELEGRAM_ID }}",
+          "text": "⚠️ AI Analysis Failed\n\nContent: {{ $json.title }}\n\nError: {{ $json.error }}\n\nRetry attempt: {{ $json.processing_attempts + 1 }}/3"
+        }
+      },
+      "id": "notify-error",
+      "name": "Notify Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pending Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pending Content": {
+      "main": [
+        [
+          {
+            "node": "Has Content?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content?": {
+      "main": [
+        [
+          {
+            "node": "Set State: Processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Set State: Processing": {
+      "main": [
+        [
+          {
+            "node": "Call OpenClaw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenClaw": {
+      "main": [
+        [
+          {
+            "node": "Set State: Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Set State: Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set State: Failed": {
+      "main": [
+        [
+          {
+            "node": "Notify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "Error Handler"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ontoiq",
+      "color": "#3b82f6"
+    },
+    {
+      "name": "ai-analysis",
+      "color": "#8b5cf6"
+    }
+  ]
+}
