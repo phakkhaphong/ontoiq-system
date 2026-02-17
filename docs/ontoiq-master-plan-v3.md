@@ -1,8 +1,8 @@
-# Ontoiq Master Plan v4: GitOps for AI Personalization
+# Ontoiq Master Plan v5: AI Directory Context Engineering
 
-**Version**: 4.0  
-**Updated**: 2026-02-16  
-**Status**: Production Ready - Bare Metal OpenClaw  
+**Version**: 5.0  
+**Updated**: 2026-02-17  
+**Status**: Production Ready - AI Context Engineering Complete  
 **Language**: ภาษาไทย (Technical Professional)
 
 ---
@@ -19,7 +19,7 @@
     
 - **State (ฐานข้อมูล):** เก็บใน **Docker Volume** (Local) และ Backup ขึ้น Cloudflare R2 (Cold Storage)
 
-### สถานะปัจจุบัน (v4.0 - Major Update)
+### สถานะปัจจุบัน (v5.0 - AI Context Engineering)
 - ✅ **OpenClaw Bare Metal** - ไม่ใช่ Docker (ลดความซับซ้อน Gateway config)
 - ✅ **Loop Prevention Architecture** - OpenClaw workspace แยกจาก vault
 - ✅ **Disaster Recovery Ready** - Git repository พร้อมสำหรับกู้คืน VPS ใหม่
@@ -27,6 +27,8 @@
 - ✅ **GitOps Architecture** สำหรับ AI brain
 - ✅ **Hybrid Architecture** - Docker services (n8n, postgres, qdrant) + Bare Metal OpenClaw
 - ✅ **n8n Vault Integration** - n8n เข้าถึง vault ผ่าน Docker volumes
+- ✅ **AI Directory Context Engineering** - AI เข้าใจและใช้ directory structure ถูกต้อง
+- ✅ **System Testing Complete** - ทดสอบระบบ end-to-end ผ่านทุก test cases
 
 ---
 
@@ -197,7 +199,7 @@ n8n:
 ├── backups/                              <-- [DATA] Backup storage
 │
 ├── docs/                                 <-- [GIT] Documentation
-│   └── ontoiq-master-plan-v4.md          <-- This file
+│   └── ontoiq-master-plan-v5.md          <-- This file
 │
 ├── n8n/                                  <-- [DATA] n8n Docker volume
 │   └── data/                             <-- Workflows & credentials
@@ -224,7 +226,15 @@ n8n:
 │   ├── memory/                           ← Daily logs (gitignored)
 │   ├── skills/                           ← Custom skills
 │   ├── staging → ontoiq-vault/01-Raw-Content/  ← Symlink (read-only)
+│   │   ├── README.md                         ← Directory documentation
+│   │   ├── blogs/                            ← Blog articles
+│   │   ├── youtube/                          ← Video transcripts
+│   │   └── udemy/                            ← Course materials
 │   └── output → ontoiq-vault/02-Extracts/    ← Symlink (write-only)
+│       ├── README.md                         ← Directory documentation
+│       ├── concepts/                         ← Key concept extractions
+│       ├── insights/                         ← Content analysis
+│       └── quotes/                           ← Notable quotes
 │
 ├── postgres/                             <-- [DATA] PostgreSQL volume
 │   ├── data/                             ← Database files
@@ -237,10 +247,7 @@ n8n:
 └── scripts/                              <-- [GIT] Utility scripts
     └── setup-disaster-recovery.sh        ← VPS recovery script
 
-/opt/openclaw/                            <-- [BARE METAL] OpenClaw installation
-├── bin/openclaw                          ← Binary
-├── config/                               ← Config files
-└── logs/                                 ← Log files
+/usr/bin/openclaw                          <-- [BARE METAL] OpenClaw installation (npm global)
 
 /root/.openclaw/                          <-- [BARE METAL] OpenClaw system
 ├── openclaw.json                         ← Main config (ชี้ไป workspace)
@@ -424,6 +431,6 @@ done
 
 ---
 
-*Version: 4.0*  
-*Updated: 2026-02-16*  
-*Status: Production Ready - Bare Metal OpenClaw*
+*Version: 5.0*  
+*Updated: 2026-02-17*  
+*Status: Production Ready - AI Context Engineering Complete*
