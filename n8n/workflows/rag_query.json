@@ -1,5 +1,5 @@
 {
-  "name": "Ontoiq: RAG Query Pipeline",
+  "name": "Ontoiq: RAG Query (Native)",
   "nodes": [
     {
       "parameters": {
@@ -17,36 +17,48 @@
     },
     {
       "parameters": {
-        "jsCode": "// Validate and extract query\nconst body = $input.first().json.body;\n\nif (!body || !body.query) {\n  throw new Error('Missing query parameter');\n}\n\nconst query = body.query;\nconst domain_filter = body.domain || null;\nconst top_k = body.top_k || 5;\n\n// Log the query start time\nconst startTime = Date.now();\n\nreturn {\n  json: {\n    query: query,\n    domain_filter: domain_filter,\n    top_k: top_k,\n    start_time: startTime\n  }\n};"
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string",
+              "value": "={{ $json.body.query }}"
+            },
+            {
+              "name": "domain_filter",
+              "type": "string",
+              "value": "={{ $json.body.domain || null }}"
+            },
+            {
+              "name": "top_k",
+              "type": "number",
+              "value": "={{ $json.body.top_k || 5 }}"
+            }
+          ]
+        }
       },
-      "id": "parse-query",
+      "id": "set-parse-query",
       "name": "Parse Query",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
       "position": [250, 300]
     },
     {
       "parameters": {
-        "url": "https://api.openai.com/v1/embeddings",
-        "method": "POST",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "model": "text-embedding-3-large",
-          "input": "={{ $json.query }}",
+        "model": "text-embedding-3-large",
+        "options": {
           "dimensions": 1536
-        },
-        "options": {}
+        }
       },
-      "id": "generate-query-embedding",
-      "name": "Generate Query Embedding",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
+      "id": "openai-embeddings-query",
+      "name": "Query Embeddings",
+      "type": "n8n-nodes-base.embeddingsOpenAi",
+      "typeVersion": 1,
       "position": [450, 300],
       "credentials": {
-        "httpHeaderAuth": {
+        "openAiApi": {
           "id": "openai-api",
           "name": "OpenAI API"
         }
@@ -54,42 +66,26 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract embedding vector\nconst embeddingData = $input.first().json.data;\n\nif (!embeddingData || embeddingData.length === 0) {\n  throw new Error('Failed to generate query embedding');\n}\n\nconst queryVector = embeddingData[0].embedding;\n\nreturn {\n  json: {\n    vector: queryVector,\n    query: $input.first().json.query,\n    top_k: $input.first().json.top_k\n  }\n};"
-      },
-      "id": "extract-vector",
-      "name": "Extract Vector",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
-        "url": "http://qdrant:6333/collections/content_embeddings/points/search",
-        "method": "POST",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "vector": "={{ $json.vector }}",
+        "operation": "search",
+        "collection": "content_embeddings",
+        "search": {
+          "vector": "={{ $json.embedding }}",
           "limit": "={{ $json.top_k }}",
-          "with_payload": true,
-          "with_distance": true
+          "withPayload": true,
+          "withDistance": true
         }
       },
-      "id": "search-qdrant",
+      "id": "qdrant-search",
       "name": "Search Qdrant",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [850, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Process Qdrant results\nconst results = $input.first().json.result;\n\nif (!results || results.length === 0) {\n  return {\n    json: {\n      results: [],\n      context: ''\n    }\n  };\n}\n\nconst chunkIds = results.map(r => r.id);\n\nreturn {\n  json: {\n    chunk_ids: chunkIds,\n    results: results,\n    query: $input.first().json.query\n  }\n};"
-      },
-      "id": "process-results",
-      "name": "Process Results",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1050, 300]
+      "type": "n8n-nodes-base.qdrantVectorStore",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "qdrantApi": {
+          "id": "qdrant-api",
+          "name": "Qdrant API"
+        }
+      }
     },
     {
       "parameters": {
@@ -99,15 +95,15 @@
         "parameters": [
           {
             "name": "chunk_ids",
-            "value": "={{ $json.chunk_ids }}"
+            "value": "={{ $json.map(r => r.id) }}"
           }
         ]
       },
-      "id": "fetch-chunks",
+      "id": "postgres-fetch-chunks",
       "name": "Fetch Chunk Content",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1250, 300],
+      "position": [850, 300],
       "credentials": {
         "postgres": {
           "id": "postgres-ontoiq",
@@ -117,13 +113,23 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build context for AI\nconst chunks = $input.all();\nconst originalQuery = $input.first().json.query;\n\nlet context = '## Retrieved Context:\\n\\n';\n\nfor (const chunk of chunks) {\n  context += `Source: ${chunk.json.source_title} (${chunk.json.source_type})\\n`;\n  context += `Chunk ${chunk.json.chunk_number}:\\n`;\n  context += `${chunk.json.chunk_text}\\n\\n`;\n  context += `---\\n\\n`;\n}\n\nconst fullPrompt = `User Query: ${originalQuery}\\n\\n${context}\\n\\nBased on the above context, please provide a comprehensive answer to the user's query. If the context doesn't contain enough information, please say so.`;\n\nreturn {\n  json: {\n    prompt: fullPrompt,\n    original_query: originalQuery,\n    chunk_count: chunks.length\n  }\n};"
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "context",
+              "type": "string",
+              "value": "={{ $input.all().map(c => `Source: ${c.json.source_title} (${c.json.source_type})\nChunk ${c.json.chunk_number}:\n${c.json.chunk_text}\n---`).join('\n\n') }}"
+            }
+          ]
+        }
       },
-      "id": "build-context",
+      "id": "set-build-context",
       "name": "Build Context",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1450, 300]
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1050, 300]
     },
     {
       "parameters": {
@@ -137,25 +143,50 @@
           "tool": "sessions_send",
           "args": {
             "sessionKey": "agent:main:main",
-            "message": "={{ $json.prompt }}"
+            "message": "User Query: {{ $json.query }}\n\n## Retrieved Context:\n\n{{ $json.context }}\n\nBased on the above context, please provide a comprehensive answer to the user's query. If the context doesn't contain enough information, please say so."
           }
         }
       },
-      "id": "call-openclaw-rag",
+      "id": "http-openclaw-rag",
       "name": "Call OpenClaw for Answer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [1650, 300]
+      "position": [1250, 300]
     },
     {
       "parameters": {
-        "jsCode": "// Log query for analytics\nconst endTime = Date.now();\nconst startTime = $input.first().json.start_time || endTime - 1000;\nconst responseTime = endTime - startTime;\n\nreturn {\n  json: {\n    query_text: $input.first().json.original_query,\n    results_count: $input.first().json.chunk_count,\n    response_time_ms: responseTime,\n    top_result_ids: $input.first().json.chunk_ids || []\n  }\n};"
+        "options": {}
       },
-      "id": "prepare-log",
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "query_text",
+              "type": "string",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "results_count",
+              "type": "number",
+              "value": "={{ $json.length }}"
+            }
+          ]
+        }
+      },
+      "id": "set-log-query",
       "name": "Prepare Query Log",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1650, 500]
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1050, 500]
     },
     {
       "parameters": {
@@ -164,42 +195,20 @@
         "table": "query_logs",
         "columns": {
           "query_text": "={{ $json.query_text }}",
-          "results_count": "={{ $json.results_count }}",
-          "response_time_ms": "={{ $json.response_time_ms }}",
-          "top_result_ids": "={{ $json.top_result_ids }}"
+          "results_count": "={{ $json.results_count }}"
         }
       },
-      "id": "log-query",
+      "id": "postgres-log-query",
       "name": "Log Query",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1850, 500],
+      "position": [1250, 500],
       "credentials": {
         "postgres": {
           "id": "postgres-ontoiq",
           "name": "Ontoiq Postgres"
         }
       }
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "id": "respond",
-      "name": "Respond to Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1850, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Prepare success response\nconst chunks = $input.all().filter(item => item.json.chunk_text);\n\nreturn {\n  json: {\n    success: true,\n    query: $input.first().json.original_query,\n    results_found: chunks.length,\n    sources: chunks.map(c => ({\n      title: c.json.source_title,\n      type: c.json.source_type,\n      chunk_number: c.json.chunk_number,\n      preview: c.json.chunk_text.substring(0, 200) + '...'\n    }))\n  }\n};"
-      },
-      "id": "prepare-response",
-      "name": "Prepare Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1850, 100]
     }
   ],
   "connections": {
@@ -218,25 +227,14 @@
       "main": [
         [
           {
-            "node": "Generate Query Embedding",
+            "node": "Query Embeddings",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Query Embedding": {
-      "main": [
-        [
-          {
-            "node": "Extract Vector",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Vector": {
+    "Query Embeddings": {
       "main": [
         [
           {
@@ -248,17 +246,6 @@
       ]
     },
     "Search Qdrant": {
-      "main": [
-        [
-          {
-            "node": "Process Results",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Process Results": {
       "main": [
         [
           {
@@ -281,11 +268,6 @@
             "node": "Build Context",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Prepare Response",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -295,17 +277,6 @@
         [
           {
             "node": "Call OpenClaw for Answer",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Query Log": {
-      "main": [
-        [
-          {
-            "node": "Log Query",
             "type": "main",
             "index": 0
           }
@@ -323,11 +294,11 @@
         ]
       ]
     },
-    "Prepare Response": {
+    "Prepare Query Log": {
       "main": [
         [
           {
-            "node": "Respond to Webhook",
+            "node": "Log Query",
             "type": "main",
             "index": 0
           }
@@ -336,7 +307,9 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
   },
   "staticData": null,
   "tags": [
@@ -349,8 +322,8 @@
       "color": "#10b981"
     },
     {
-      "name": "query",
-      "color": "#f59e0b"
+      "name": "native",
+      "color": "#22c55e"
     }
   ]
 }

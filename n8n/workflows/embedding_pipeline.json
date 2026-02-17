@@ -1,109 +1,6 @@
 {
-  "name": "Ontoiq: Embedding Pipeline",
+  "name": "Ontoiq: Embedding Pipeline (Native)",
   "nodes": [
-    {
-      "parameters": {
-        "jsCode": "// Fetch pending chunks without embeddings\nconst { Client } = require('pg');\n\nconst client = new Client({\n  host: 'postgres',\n  port: 5432,\n  database: 'ontoiq',\n  user: 'ontoiq',\n  password: process.env.POSTGRES_PASSWORD\n});\n\nawait client.connect();\n\nconst result = await client.query(`\n  SELECT id, source_id, chunk_text, chunk_number\n  FROM content_chunks\n  WHERE qdrant_point_id IS NULL\n  ORDER BY created_at ASC\n  LIMIT 10\n`);\n\nawait client.end();\n\nreturn result.rows.map(row => ({\n  json: row\n}));"
-      },
-      "id": "fetch-pending-chunks",
-      "name": "Fetch Pending Chunks",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [250, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Batch chunks for embedding\nconst batchSize = 5;\nconst chunks = $input.all();\nconst batches = [];\n\nfor (let i = 0; i < chunks.length; i += batchSize) {\n  const batch = chunks.slice(i, i + batchSize);\n  batches.push({\n    json: {\n      batch_index: i / batchSize,\n      chunks: batch.map(c => ({\n        id: c.json.id,\n        source_id: c.json.source_id,\n        chunk_text: c.json.chunk_text,\n        chunk_number: c.json.chunk_number\n      }))\n    }\n  });\n}\n\nreturn batches;"
-      },
-      "id": "batch-chunks",
-      "name": "Batch Chunks",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [450, 300]
-    },
-    {
-      "parameters": {
-        "url": "https://api.openai.com/v1/embeddings",
-        "method": "POST",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "model": "text-embedding-3-large",
-          "input": "={{ $json.chunks.map(c => c.chunk_text) }}",
-          "dimensions": 1536
-        },
-        "options": {}
-      },
-      "id": "generate-embeddings",
-      "name": "Generate Embeddings (OpenAI)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [650, 300],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "openai-api",
-          "name": "OpenAI API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Process embedding results and prepare for Qdrant\nconst chunks = $input.first().json.chunks;\nconst embeddings = $input.first().json.data;\n\nif (!embeddings || embeddings.length === 0) {\n  throw new Error('No embeddings returned');\n}\n\nconst points = chunks.map((chunk, index) => ({\n  id: chunk.id, // Use chunk ID as Qdrant point ID\n  vector: embeddings[index].embedding,\n  payload: {\n    chunk_id: chunk.id,\n    source_id: chunk.source_id,\n    chunk_number: chunk.chunk_number,\n    chunk_text_preview: chunk.chunk_text.substring(0, 200),\n    created_at: new Date().toISOString()\n  }\n}));\n\nreturn points.map(point => ({\n  json: point\n}));"
-      },
-      "id": "prepare-qdrant-points",
-      "name": "Prepare Qdrant Points",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [850, 300]
-    },
-    {
-      "parameters": {
-        "url": "http://qdrant:6333/collections/content_embeddings/points",
-        "method": "PUT",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "points": "={{ [$json] }}"
-        }
-      },
-      "id": "upsert-to-qdrant",
-      "name": "Upsert to Qdrant",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [1050, 300]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "UPDATE content_chunks SET qdrant_point_id = $1, embedding_model = 'text-embedding-3-large' WHERE id = $2",
-        "options": {
-          "mode": "each"
-        },
-        "parameters": [
-          {
-            "name": "qdrant_point_id",
-            "value": "={{ $json.id }}"
-          },
-          {
-            "name": "chunk_id",
-            "value": "={{ $json.payload.chunk_id }}"
-          }
-        ]
-      },
-      "id": "update-postgres",
-      "name": "Update Postgres",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [1250, 300],
-      "credentials": {
-        "postgres": {
-          "id": "postgres-ontoiq",
-          "name": "Ontoiq Postgres"
-        }
-      }
-    },
     {
       "parameters": {
         "rule": {
@@ -120,6 +17,23 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
       "position": [50, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, source_id, chunk_text, chunk_number FROM content_chunks WHERE qdrant_point_id IS NULL ORDER BY created_at ASC LIMIT 50"
+      },
+      "id": "postgres-fetch-pending",
+      "name": "Fetch Pending Chunks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
     },
     {
       "parameters": {
@@ -143,21 +57,131 @@
           "combinator": "and"
         }
       },
-      "id": "check-chunks",
+      "id": "if-has-chunks",
       "name": "Has Pending Chunks?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [250, 100]
+      "position": [450, 300]
     },
     {
       "parameters": {
-        "jsCode": "// Rate limiting: Wait between batches\nconst batchIndex = $json.batch_index;\nconst delayMs = batchIndex * 2000; // 2 seconds between batches\n\nawait new Promise(resolve => setTimeout(resolve, delayMs));\n\nreturn $input.all();"
+        "model": "text-embedding-3-large",
+        "options": {
+          "dimensions": 1536
+        }
       },
-      "id": "rate-limit",
-      "name": "Rate Limit",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [650, 100]
+      "id": "openai-embeddings",
+      "name": "OpenAI Embeddings",
+      "type": "n8n-nodes-base.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "collection": "content_embeddings",
+        "points": [
+          {
+            "id": "={{ $json.id }}",
+            "vector": "={{ $json.embedding }}",
+            "payload": {
+              "chunk_id": "={{ $json.id }}",
+              "source_id": "={{ $json.source_id }}",
+              "chunk_number": "={{ $json.chunk_number }}",
+              "created_at": "={{ $now }}"
+            }
+          }
+        ]
+      },
+      "id": "qdrant-upsert",
+      "name": "Upsert to Qdrant",
+      "type": "n8n-nodes-base.qdrantVectorStore",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "qdrantApi": {
+          "id": "qdrant-api",
+          "name": "Qdrant API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "content_chunks",
+        "columns": {
+          "qdrant_point_id": "={{ $json.id }}",
+          "embedding_model": "text-embedding-3-large",
+          "embedding_generated_at": "={{ $now }}"
+        },
+        "where": {
+          "id": "={{ $json.id }}"
+        }
+      },
+      "id": "postgres-update",
+      "name": "Update Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "wait-rate-limit",
+      "name": "Wait (Rate Limit)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [650, 100],
+      "webhookId": "rate-limit-wait"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.USER_TELEGRAM_ID }}",
+        "text": "✅ Embedding pipeline completed: {{ $json.length }} chunks processed"
+      },
+      "id": "telegram-success",
+      "name": "Notify Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1250, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.USER_TELEGRAM_ID }}",
+        "text": "⚠️ Embedding pipeline: No pending chunks found"
+      },
+      "id": "telegram-no-chunks",
+      "name": "Notify No Chunks",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [650, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
     }
   ],
   "connections": {
@@ -187,48 +211,32 @@
       "main": [
         [
           {
-            "node": "Batch Chunks",
+            "node": "Wait (Rate Limit)",
             "type": "main",
             "index": 0
           }
         ],
-        []
-      ]
-    },
-    "Batch Chunks": {
-      "main": [
         [
           {
-            "node": "Rate Limit",
+            "node": "Notify No Chunks",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Rate Limit": {
+    "Wait (Rate Limit)": {
       "main": [
         [
           {
-            "node": "Generate Embeddings (OpenAI)",
+            "node": "OpenAI Embeddings",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Embeddings (OpenAI)": {
-      "main": [
-        [
-          {
-            "node": "Prepare Qdrant Points",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Qdrant Points": {
+    "OpenAI Embeddings": {
       "main": [
         [
           {
@@ -249,10 +257,23 @@
           }
         ]
       ]
+    },
+    "Update Postgres": {
+      "main": [
+        [
+          {
+            "node": "Notify Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
   },
   "staticData": null,
   "tags": [
@@ -263,6 +284,10 @@
     {
       "name": "embedding",
       "color": "#8b5cf6"
+    },
+    {
+      "name": "native",
+      "color": "#22c55e"
     }
   ]
 }

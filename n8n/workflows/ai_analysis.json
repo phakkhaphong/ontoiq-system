@@ -1,5 +1,5 @@
 {
-  "name": "Ontoiq: AI Analysis Pipeline",
+  "name": "Ontoiq: AI Analysis (Native)",
   "nodes": [
     {
       "parameters": {
@@ -21,7 +21,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT * FROM pending_content LIMIT 5;"
+        "query": "SELECT * FROM pending_content WHERE processing_attempts < 3 LIMIT 5;"
       },
       "id": "fetch-pending",
       "name": "Fetch Pending Content",
@@ -169,20 +169,20 @@
     },
     {
       "parameters": {
-        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
-        "method": "POST",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "chat_id": "{{ $env.USER_TELEGRAM_ID }}",
-          "text": "⚠️ AI Analysis Failed\n\nContent: {{ $json.title }}\n\nError: {{ $json.error }}\n\nRetry attempt: {{ $json.processing_attempts + 1 }}/3"
-        }
+        "chatId": "={{ $vars.USER_TELEGRAM_ID }}",
+        "text": "⚠️ AI Analysis Failed\n\nContent: {{ $json.title }}\n\nError: {{ $json.error }}\n\nRetry attempt: {{ $json.processing_attempts + 1 }}/3"
       },
       "id": "notify-error",
       "name": "Notify Error",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [1050, 400]
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1050, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
     }
   ],
   "connections": {
@@ -216,8 +216,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "Set State: Processing": {
@@ -265,7 +264,8 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "errorWorkflow": "Error Handler"
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
   },
   "staticData": null,
   "tags": [
@@ -276,6 +276,10 @@
     {
       "name": "ai-analysis",
       "color": "#8b5cf6"
+    },
+    {
+      "name": "native",
+      "color": "#22c55e"
     }
   ]
 }
