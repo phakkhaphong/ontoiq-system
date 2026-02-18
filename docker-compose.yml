@@ -92,10 +92,10 @@ services:
       - "127.0.0.1:5678:5678"
     volumes:
       - ./n8n/data:/home/node/.n8n
-      # Vault access for n8n workflows
-      - ./ontoiq-vault/01-Raw-Content:/vault/raw:rw
-      - ./ontoiq-vault/02-Extracts:/vault/extracts:ro
-      - ./ontoiq-vault/06-Analytics:/vault/analytics:rw
+      # Vault access for n8n workflows (mount to allowed path)
+      - /opt/ontoiq-system/ontoiq-vault/01-Raw-Content:/home/node/vault/raw:rw
+      - /opt/ontoiq-system/ontoiq-vault/02-Extracts:/home/node/vault/extracts:ro
+      - /opt/ontoiq-system/ontoiq-vault/06-Analytics:/home/node/vault/analytics:rw
     environment:
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
