@@ -1,0 +1,560 @@
+{
+  "name": "Ontoiq: Human-in-the-Loop Response Handler (Native)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "options": {}
+      },
+      "id": "trigger-telegram",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [50, 300],
+      "webhookId": "ontoiq-approval-handler",
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "message_text",
+              "type": "string",
+              "value": "={{ $json.message?.text || '' }}"
+            },
+            {
+              "name": "chat_id",
+              "type": "string",
+              "value": "={{ $json.message?.chat?.id }}"
+            },
+            {
+              "name": "from_id",
+              "type": "string",
+              "value": "={{ $json.message?.from?.id }}"
+            }
+          ]
+        }
+      },
+      "id": "parse-command",
+      "name": "Parse Command",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.message_text.toLowerCase().startsWith('approve') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-approve",
+      "name": "Is Approve?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.message_text.toLowerCase().startsWith('reject') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-reject",
+      "name": "Is Reject?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "filename",
+              "type": "string",
+              "value": "={{ $json.message_text.split(' ')[1] }}"
+            },
+            {
+              "name": "source_path",
+              "type": "string",
+              "value": "/vault/03-Drafts/social-posts/drafts/"
+            },
+            {
+              "name": "dest_path",
+              "type": "string",
+              "value": "/vault/03-Drafts/social-posts/ready/"
+            },
+            {
+              "name": "full_source",
+              "type": "string",
+              "value": "/vault/03-Drafts/social-posts/drafts/{{ $json.message_text.split(' ')[1] }}"
+            },
+            {
+              "name": "full_dest",
+              "type": "string",
+              "value": "/vault/03-Drafts/social-posts/ready/{{ $json.message_text.split(' ')[1] }}"
+            }
+          ]
+        }
+      },
+      "id": "extract-filename-approve",
+      "name": "Extract Filename (Approve)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [650, 150]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "filename",
+              "type": "string",
+              "value": "={{ $json.message_text.split(' ')[1] }}"
+            },
+            {
+              "name": "filepath",
+              "type": "string",
+              "value": "/vault/03-Drafts/social-posts/drafts/{{ $json.message_text.split(' ')[1] }}"
+            }
+          ]
+        }
+      },
+      "id": "extract-filename-reject",
+      "name": "Extract Filename (Reject)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [650, 450]
+    },
+    {
+      "parameters": {
+        "command": "mv {{ $json.full_source }} {{ $json.full_dest }}",
+        "cwd": "/vault"
+      },
+      "id": "execute-move",
+      "name": "Move to Ready",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 2.1,
+      "position": [850, 150]
+    },
+    {
+      "parameters": {
+        "command": "rm {{ $json.filepath }}",
+        "cwd": "/vault"
+      },
+      "id": "execute-delete",
+      "name": "Delete Draft",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 2.1,
+      "position": [850, 450]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE draft_reviews SET status = 'approved', approved_at = NOW() WHERE filename = $1;",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "filename",
+            "value": "={{ $json.filename }}"
+          }
+        ]
+      },
+      "id": "postgres-update-approved",
+      "name": "Update DB (Approved)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 150],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE draft_reviews SET status = 'rejected', rejected_at = NOW() WHERE filename = $1;",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "filename",
+            "value": "={{ $json.filename }}"
+          }
+        ]
+      },
+      "id": "postgres-update-rejected",
+      "name": "Update DB (Rejected)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 450],
+      "credentials": {
+        "postgres": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "✅ **Draft Approved**\n\n📄 {{ $json.filename }}\n\nMoved to `ready/` folder. Will be published according to schedule.",
+        "options": {
+          "parse_mode": "Markdown",
+          "reply_to_message_id": "={{ $json.message_id }}"
+        }
+      },
+      "id": "telegram-confirm-approve",
+      "name": "Confirm Approved",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1250, 150],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "🗑️ **Draft Rejected**\n\n📄 {{ $json.filename }}\n\nDeleted from `drafts/` folder.",
+        "options": {
+          "parse_mode": "Markdown",
+          "reply_to_message_id": "={{ $json.message_id }}"
+        }
+      },
+      "id": "telegram-confirm-reject",
+      "name": "Confirm Rejected",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1250, 450],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.message_text.toLowerCase().startsWith('edit') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-edit",
+      "name": "Is Edit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "filename",
+              "type": "string",
+              "value": "={{ $json.message_text.split(' ')[1] }}"
+            }
+          ]
+        }
+      },
+      "id": "extract-filename-edit",
+      "name": "Extract Filename (Edit)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE draft_reviews SET status = 'editing', updated_at = NOW() WHERE filename = $1;",
+        "options": {
+          "mode": "each"
+        },
+        "parameters": [
+          {
+            "name": "filename",
+            "value": "={{ $json.filename }}"
+          }
+        ]
+      },
+      "id": "postgres-update-editing",
+      "name": "Update DB (Editing)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "✏️ **Draft Kept for Editing**\n\n📄 {{ $json.filename }}\n\nFile remains in `drafts/` folder. Edit in Obsidian and move to `ready/` when done.",
+        "options": {
+          "parse_mode": "Markdown",
+          "reply_to_message_id": "={{ $json.message_id }}"
+        }
+      },
+      "id": "telegram-confirm-edit",
+      "name": "Confirm Editing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1050, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Is Approve?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Edit?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Reject?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Approve?": {
+      "main": [
+        [
+          {
+            "node": "Extract Filename (Approve)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Filename (Approve)": {
+      "main": [
+        [
+          {
+            "node": "Move to Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move to Ready": {
+      "main": [
+        [
+          {
+            "node": "Update DB (Approved)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update DB (Approved)": {
+      "main": [
+        [
+          {
+            "node": "Confirm Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Reject?": {
+      "main": [
+        [
+          {
+            "node": "Extract Filename (Reject)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Filename (Reject)": {
+      "main": [
+        [
+          {
+            "node": "Delete Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Draft": {
+      "main": [
+        [
+          {
+            "node": "Update DB (Rejected)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update DB (Rejected)": {
+      "main": [
+        [
+          {
+            "node": "Confirm Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Edit?": {
+      "main": [
+        [
+          {
+            "node": "Extract Filename (Edit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Filename (Edit)": {
+      "main": [
+        [
+          {
+            "node": "Update DB (Editing)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update DB (Editing)": {
+      "main": [
+        [
+          {
+            "node": "Confirm Editing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ontoiq",
+      "color": "#3b82f6"
+    },
+    {
+      "name": "approval",
+      "color": "#f59e0b"
+    },
+    {
+      "name": "native",
+      "color": "#22c55e"
+    }
+  ]
+}

@@ -174,19 +174,21 @@
 
 ### n8n Volume Mappings (Vault Integration)
 
+**Security Note:** n8n จำกัดการเข้าถึงไฟล์เฉพาะใน `/home/node/.n8n-files` ดังนั้นต้อง mount vault ไปที่ `/home/node/vault/`
+
 ```yaml
 n8n:
   volumes:
     - ./n8n/data:/home/node/.n8n
-    # Vault access for workflows
-    - ./ontoiq-vault/01-Raw-Content:/vault/raw:rw      # Write access
-    - ./ontoiq-vault/02-Extracts:/vault/extracts:ro    # Read-only
-    - ./ontoiq-vault/06-Analytics:/vault/analytics:rw  # Write access
-  environment:
-    - WORKSPACE_RAW=/vault/raw
-    - WORKSPACE_EXTRACTS=/vault/extracts
-    - WORKSPACE_ANALYTICS=/vault/analytics
+    # Vault access for workflows (mount to allowed path within /home/node/)
+    - /opt/ontoiq-system/ontoiq-vault/01-Raw-Content:/home/node/vault/raw:rw      # Write access
+    - /opt/ontoiq-system/ontoiq-vault/02-Extracts:/home/node/vault/extracts:ro    # Read-only
+    - /opt/ontoiq-system/ontoiq-vault/06-Analytics:/home/node/vault/analytics:rw  # Write access
 ```
+
+**Workflow Configuration:**
+- Read Binary Files node: ใช้ path `/home/node/vault/raw/**/*.md`
+- อย่าใช้ `/vault/raw/` เพราะ n8n จะ block ด้วย security policy
 
 ---
 
@@ -206,7 +208,7 @@ n8n:
 ├── backups/                              <-- [DATA] Backup storage
 │
 ├── docs/                                 <-- [GIT] Documentation
-│   └── ontoiq-master-plan-v5.md          <-- This file
+│   └── ontoiq-master-plan.md             <-- This file
 │
 ├── n8n/                                  <-- [DATA] n8n Docker volume
 │   └── data/                             <-- Workflows & credentials
@@ -408,7 +410,13 @@ done
 - [x] Mutagen sync setup
 - [x] GitOps architecture for AI brain
 
-### **🔄 In Progress**
+### **� Fixed (2026-02-18)**
+- [x] **n8n File Access Security**: แก้ไข path จาก `/vault/raw` → `/home/node/vault/raw` เนื่องจาก n8n จำกัดการเข้าถึงไฟล์เฉพาะใน `/home/node/.n8n-files`
+  - Updated `docker-compose.yml`: เปลี่ยน mount path
+  - Updated `Read Binary Files` node: ใช้ path `/home/node/vault/raw/**/*.md`
+  - Content Ingestion workflow ทำงานได้แล้ว
+
+### **�🔄 In Progress**
 - [ ] Performance optimization
 - [ ] Advanced AI agent features
 - [ ] Web interface development

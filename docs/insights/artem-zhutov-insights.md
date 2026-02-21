@@ -6,38 +6,39 @@
 
 ---
 
-## 1. Unified Workspace Strategy
+## 1. Separate Workspace Strategy
 
 ### แนวคิด
-OpenClaw workspace และ Obsidian vault ควรเป็นที่เดียวกัน ไม่ใช่คนละ folder
+OpenClaw workspace และ Obsidian vault แยกกันอยู่คนละ folder เพื่อความยืดหยุ่นในการจัดการ
 
-### Implementation สำหรับ OntoIQ
+### โครงสร้างปัจจุบัน
 ```
-ontoiq-vault/                    # Obsidian vault = OpenClaw workspace
-├── 00-System/                   # System files (AI context)
-│   ├── USER.md                 
-│   ├── SOUL.md                 
-│   └── kanban.md                 
-│   └── memory/                 
-├── 01-Raw-Content/              # n8n writes here
-├── 02-Extracts/                 # OpenClaw writes insights here
-├── 03-Drafts/                   # Human + AI co-work here
-├── 04-Courseware/               
-├── 05-Published/                
-└── 06-Analytics/                
+ontoiq-system/
+├── ontoiq-vault/                # Obsidian vault (เอกสาร บทความ เนื้อหา)
+│   ├── 00-System/
+│   ├── 01-Raw-Content/
+│   ├── 02-Extracts/
+│   └── ...
+├── openclaw-workspace/          # OpenClaw workspace (AI context, skills)
+│   ├── AGENTS.md
+│   ├── BOOTSTRAP.md
+│   ├── HEARTBEAT.md
+│   ├── IDENTITY.md
+│   └── ...
 ```
 
 ### Docker Config
 ```yaml
 openclaw:
   volumes:
-    - ./ontoiq-vault:/home/openclaw/.openclaw/workspace
+    - ./openclaw-workspace:/home/openclaw/.openclaw/workspace
+    - ./ontoiq-vault:/home/openclaw/.openclaw/vault  # เข้าถึง vault ได้
 ```
 
 ### Workflow Example
 ```
 1. Human: "สร้าง post เรื่อง Fabric"
-2. OpenClaw อ่าน 02-Extracts/ เพื่อหา context
+2. OpenClaw อ่าน 02-Extracts/ (ใน vault) เพื่อหา context
 3. OpenClaw เขียน draft ที่ 03-Drafts/social-posts/drafts/
 4. Mutagen syncs to Windows
 5. Human เปิด Obsidian บน Windows แก้ไข
@@ -46,10 +47,10 @@ openclaw:
 ```
 
 ### ประโยชน์
-- ไม่ต้อง copy files ข้าม folder
-- Human เห็น AI work ทันทีใน Obsidian
-- ลด sync points (1 แห่งแทน 2 แห่ง)
-- Context ไม่หาย
+- แยก concern: AI context vs เอกสาร/เนื้อหา
+- OpenClaw มีพื้นที่ทำงานส่วนตัว (skills, memory)
+- Human เห็น AI work ทันทีใน Obsidian (ผ่าน volume mount)
+- ง่ายต่อการ backup และ sync
 
 ---
 
@@ -61,7 +62,7 @@ openclaw:
 ### Implementation สำหรับ OntoIQ
 
 ```
-ontoiq-vault/skills/
+openclaw-workspace/skills/
 ├── ontoiq-content/
 │   └── SKILL.md           # Content creation skill
 ├── ontoiq-research/
@@ -127,7 +128,7 @@ AI ต้อง "จำ" ข้าม session โดยใช้ files เป็
 ### Implementation สำหรับ OntoIQ
 
 ```
-ontoiq-vault/00-System/
+openclaw-workspace/
 ├── USER.md                # User context (updates when preferences change)
 ├── SOUL.md                # AI persona (rarely changes)
 ├── TOOLS.md               # Tool reference (updates when tools change)
@@ -154,8 +155,8 @@ ontoiq-vault/00-System/
 ## Content Created
 | Type | File | Status |
 |------|------|--------|
-| Post | 03-Drafts/social-posts/drafts/power-bi-dax.md | draft |
-| Insight | 02-Extracts/insights/fabric-lakehouse.md | done |
+| Post | ontoiq-vault/03-Drafts/social-posts/drafts/power-bi-dax.md | draft |
+| Insight | ontoiq-vault/02-Extracts/insights/fabric-lakehouse.md | done |
 
 ## Learned Today
 - User prefers Thai for LinkedIn, English for Twitter
@@ -173,7 +174,7 @@ ontoiq-vault/00-System/
 
 ### Memory Loading Strategy
 ```markdown
-# In AGENTS.md
+# In AGENTS.md (อยู่ใน openclaw-workspace/)
 
 ## Session Start
 1. Read today's memory: memory/{YYYY-MM-DD}.md
@@ -491,9 +492,8 @@ Log Analysis (weekly):
 ### Implementation สำหรับ OntoIQ
 
 ```
-ontoiq-vault/
-└── 00-System/
-    └── kanban.md
+openclaw-workspace/
+└── kanban.md
 ```
 
 ### kanban.md
@@ -525,13 +525,13 @@ ontoiq-vault/
 ```
 User: "มีอะไรต้องทำบ้าง"
 OpenClaw:
-- Read kanban.md
+- Read openclaw-workspace/kanban.md
 - Parse tasks by status
 - Reply with summary
 
 User: "ย้าย DAX post ไป review"
 OpenClaw:
-- Update kanban.md
+- Update openclaw-workspace/kanban.md
 - Move task to Review column
 - Confirm change
 ```
@@ -587,7 +587,7 @@ search_files("02-Extracts/", query="Power BI")
 
 | Priority | Technique | Effort | Impact | Phase |
 |----------|-----------|--------|--------|-------|
-| **1** | Unified Workspace | Low | High | ✅ Done |
+| **1** | Separate Workspaces | Low | High | ✅ Done |
 | **2** | Persistent Memory | Low | High | ✅ Done |
 | **3** | Human-in-the-Loop | Medium | High | Week 5 |
 | **4** | Cron Briefings | Medium | Medium | Week 5 |
@@ -603,13 +603,15 @@ search_files("02-Extracts/", query="Power BI")
 ## Checklist
 
 ### Phase 1 (Done)
-- [x] Unified workspace config in docker-compose.yml
-- [x] System files created (AGENTS.md, USER.md, SOUL.md, TOOLS.md)
-- [x] Memory directory created
+- [x] Separate workspace config in docker-compose.yml
+- [x] OpenClaw workspace files created (AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, IDENTITY.md)
+- [x] System files in openclaw-workspace/ (USER.md, SOUL.md, TOOLS.md)
+- [x] Memory directory created in openclaw-workspace/
 - [x] Initial memory file created
+- [x] Ontoiq vault structure maintained for content
 
 ### Phase 2 (Week 4-5)
-- [ ] Create Kanban board in 00-System/kanban.md
+- [ ] Create Kanban board in openclaw-workspace/kanban.md
 - [ ] Create ontoiq-content skill
 - [ ] Create ontoiq-research skill
 - [ ] Implement human-in-the-loop workflow

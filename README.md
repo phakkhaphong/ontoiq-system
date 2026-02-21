@@ -16,7 +16,7 @@ AI-powered content management system with OpenClaw, n8n, and Obsidian integratio
 ├── backups/                              <-- [DATA] Backup storage (gitignored)
 │
 ├── docs/                                 <-- [DOCS] Documentation
-│   └── ontoiq-master-plan-v3.md          ← System architecture docs
+│   └── ontoiq-master-plan.md             ← System architecture docs
 │
 ├── n8n/                                  <-- [DATA] Docker volume (gitignored)
 │   └── data/                             ← n8n workflows & credentials
@@ -124,7 +124,7 @@ mutagen sync create \
 - **OpenClaw** (Bare Metal) → Reads from `staging/` → Processes → Writes to `output/`
 - **Obsidian** (Windows) → Syncs via Mutagen → Human edits in `03-Drafts/`
 
-See `docs/ontoiq-master-plan-v3.md` for detailed architecture.
+See `docs/ontoiq-master-plan.md` for detailed architecture.
 
 ## System Status
 

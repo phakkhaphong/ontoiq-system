@@ -96,6 +96,10 @@ services:
       - /opt/ontoiq-system/ontoiq-vault/01-Raw-Content:/home/node/vault/raw:rw
       - /opt/ontoiq-system/ontoiq-vault/02-Extracts:/home/node/vault/extracts:ro
       - /opt/ontoiq-system/ontoiq-vault/06-Analytics:/home/node/vault/analytics:rw
+      # OpenClaw workspace access
+      - /opt/ontoiq-system/openclaw-workspace:/home/node/workspace:ro
+      # Drafts and ready folders
+      - /opt/ontoiq-system/ontoiq-vault/03-Drafts:/home/node/vault/drafts:rw
     environment:
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
@@ -108,13 +112,15 @@ services:
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:?N8N_PASSWORD required}
       - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PORT=5678
-      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_PROTOCOL=https
       - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=true
+      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=false
+      - N8N_RESTRICT_FILE_ACCESS_TO=/home/node/vault;/home/node/workspace
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
       - WEBHOOK_URL=${WEBHOOK_URL:-http://n8n:5678/}
       - GENERIC_TIMEZONE=Asia/Bangkok
       - TZ=Asia/Bangkok

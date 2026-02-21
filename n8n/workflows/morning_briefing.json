@@ -1,0 +1,323 @@
+{
+  "name": "Ontoiq: Morning Briefing (Native)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        },
+        "options": {
+          "timezone": "Asia/Bangkok"
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Schedule Trigger (7AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [50, 300]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/workspace/kanban.md"
+      },
+      "id": "read-kanban",
+      "name": "Read Kanban",
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/vault/03-Drafts/social-posts/drafts/*.md",
+        "options": {
+          "recursive": false
+        }
+      },
+      "id": "read-drafts",
+      "name": "List Drafts",
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/vault/03-Drafts/social-posts/ready/*.md",
+        "options": {
+          "recursive": false
+        }
+      },
+      "id": "read-ready",
+      "name": "List Ready",
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "kanban_content",
+              "type": "string",
+              "value": "={{ $binary?.data?.toString() || 'No kanban file found' }}"
+            }
+          ]
+        }
+      },
+      "id": "parse-kanban",
+      "name": "Parse Kanban",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "drafts_count",
+              "type": "number",
+              "value": "={{ $binary?.fileName?.length || 0 }}"
+            },
+            {
+              "name": "drafts_list",
+              "type": "string",
+              "value": "={{ $binary?.fileName?.map(f => f.split('/').pop()).join(', ') || 'None' }}"
+            }
+          ]
+        }
+      },
+      "id": "parse-drafts",
+      "name": "Parse Drafts",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "ready_count",
+              "type": "number",
+              "value": "={{ $binary?.fileName?.length || 0 }}"
+            },
+            {
+              "name": "ready_list",
+              "type": "string",
+              "value": "={{ $binary?.fileName?.map(f => f.split('/').pop()).join(', ') || 'None' }}"
+            }
+          ]
+        }
+      },
+      "id": "parse-ready",
+      "name": "Parse Ready",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "fields": {
+          "values": [
+            {
+              "name": "briefing_message",
+              "type": "string",
+              "value": "🌅 **Morning Briefing — OntoIQ**\n\n📅 *{{ $now.format('YYYY-MM-DD HH:mm') }}*\n\n## 📊 Today's Status\n\n| Section | Count |\n|---------|-------|\n| 📝 Drafts Pending | {{ $json.drafts_count }} |\n| ✅ Ready to Publish | {{ $json.ready_count }} |\n\n## 📝 Drafts ({{ $json.drafts_count }})\n{{ $json.drafts_list }}\n\n## ✅ Ready to Publish ({{ $json.ready_count }})\n{{ $json.ready_list }}\n\n---\n\n🤖 *Reply to: approve, publish, or skip*"
+            }
+          ]
+        }
+      },
+      "id": "build-message",
+      "name": "Build Briefing Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.USER_TELEGRAM_ID }}",
+        "text": "={{ $json.briefing_message }}",
+        "options": {
+          "parse_mode": "Markdown",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "telegram-briefing",
+      "name": "Send Morning Briefing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [850, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as total_sources FROM content_sources WHERE created_at >= NOW() - INTERVAL '24 hours';\nSELECT COUNT(*) as pending_analysis FROM content_sources WHERE processing_state = 'pending';\nSELECT COUNT(*) as completed_today FROM content_sources WHERE processing_state = 'completed' AND updated_at >= NOW() - INTERVAL '24 hours';"
+      },
+      "id": "postgres-stats",
+      "name": "Fetch System Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [250, 500],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-ontoiq",
+          "name": "Ontoiq Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.USER_TELEGRAM_ID }}",
+        "text": "📈 **System Stats (24h)**\n\n• New content sources: {{ $json[0].total_sources }}\n• Pending analysis: {{ $json[1].pending_analysis }}\n• Completed today: {{ $json[2].completed_today }}",
+        "options": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-stats",
+      "name": "Send System Stats",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [850, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (7AM)": {
+      "main": [
+        [
+          {
+            "node": "Read Kanban",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "List Drafts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "List Ready",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch System Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Kanban": {
+      "main": [
+        [
+          {
+            "node": "Parse Kanban",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Drafts": {
+      "main": [
+        [
+          {
+            "node": "Parse Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Ready": {
+      "main": [
+        [
+          {
+            "node": "Parse Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Drafts": {
+      "main": [
+        [
+          {
+            "node": "Build Briefing Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Briefing Message": {
+      "main": [
+        [
+          {
+            "node": "Send Morning Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch System Stats": {
+      "main": [
+        [
+          {
+            "node": "Send System Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ontoiq",
+      "color": "#3b82f6"
+    },
+    {
+      "name": "briefing",
+      "color": "#f59e0b"
+    },
+    {
+      "name": "native",
+      "color": "#22c55e"
+    }
+  ]
+}
